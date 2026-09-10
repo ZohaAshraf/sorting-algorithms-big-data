@@ -1,69 +1,54 @@
 import pandas as pd
-import math
+import os
 
-RESULTS_CSV = 'sort_benchmark_results.csv'
-TOTAL_ROWS = 28_374_211  # <-- fill this in with your Part A total row count (numeric column, non-missing count is fine too)
+# The 4 files we chose in Step 2, based on check_sizes.py output
+files = ['2015.csv', '2016.csv', '2017.csv', '2018.csv']
+folder = './data'
 
-df = pd.read_csv(RESULTS_CSV)
+total_rows = 0
+columns = None
+chunk_memory_mb = None
 
-# Use the largest sample size, random ordering, ARR_DELAY column, to estimate c
-largest_n = df['size'].max()
-subset = df[(df['size'] == largest_n) & (df['ordering'] == 'random') & (df['column'] == 'ARR_DELAY')]
+for filename in files:
+    path = os.path.join(folder, filename)
+    print(f'Processing {filename}...')
 
-print(f'Using n={largest_n} (largest sample) to fit c for time = c * n^2\n')
+    for i, chunk in enumerate(pd.read_csv(path, chunksize=1_000_000)):
+        total_rows += len(chunk)
 
-results = {}
-for _, row in subset.iterrows():
-    algo = row['algorithm']
-    t = row['time_seconds']
-    c = t / (largest_n ** 2)
-    results[algo] = c
-    print(f'{algo}: measured time={t:.6f}s at n={largest_n}  ->  c = {c:.3e}')
+        # Grab columns and memory footprint just once, from the very first chunk
+        if columns is None:
+            columns = list(chunk.columns)
+            chunk_memory_mb = chunk.memory_usage(deep=True).sum() / 1e6
+            print(f'  Columns ({len(columns)}): {columns}')
+            print(f'  Memory footprint of one chunk: {chunk_memory_mb:.2f} MB')
 
-def format_duration(seconds):
-    """Convert seconds into the most readable unit."""
-    minute, hour, day, year = 60, 3600, 86400, 31_536_000
-    if seconds < minute:
-        return f'{seconds:.2f} seconds'
-    elif seconds < hour:
-        return f'{seconds/minute:.2f} minutes'
-    elif seconds < day:
-        return f'{seconds/hour:.2f} hours'
-    elif seconds < year:
-        return f'{seconds/day:.2f} days'
-    else:
-        return f'{seconds/year:.2f} years'
+        if i % 5 == 0:
+            print(f'  ...chunk {i}, running total rows: {total_rows:,}')
 
-if TOTAL_ROWS is None:
-    raise ValueError('Set TOTAL_ROWS to your Part A total row count before running this.')
+print(f'\nTOTAL ROWS across all 4 files: {total_rows:,}')
 
-print(f'\nExtrapolating to full dataset size: {TOTAL_ROWS:,} rows\n')
+# Basic stats for our chosen numeric column: ARR_DELAY
+print('\n--- ARR_DELAY statistics ---')
+stats_accum = {'min': [], 'max': [], 'sum': 0, 'count': 0, 'missing': 0}
 
-full_scale_estimates = {}
-for algo, c in results.items():
-    est_seconds = c * (TOTAL_ROWS ** 2)
-    full_scale_estimates[algo] = est_seconds
-    print(f'{algo}: estimated time at full scale = {format_duration(est_seconds)}')
+for filename in files:
+    path = os.path.join(folder, filename)
+    for chunk in pd.read_csv(path, chunksize=1_000_000, usecols=['ARR_DELAY']):
+        col = chunk['ARR_DELAY']
+        stats_accum['min'].append(col.min())
+        stats_accum['max'].append(col.max())
+        stats_accum['sum'] += col.sum()
+        stats_accum['count'] += col.notna().sum()
+        stats_accum['missing'] += col.isna().sum()
 
-# Compare against Timsort O(n log n) - estimate its constant from the SAME largest-n measurement
-# using Python's actual sorted() on that same sample size for a fair constant
-import time
-import numpy as np
-rng = np.random.default_rng(42)
-sample_for_timsort = rng.integers(-100, 100, size=largest_n).tolist()
+overall_min = min(stats_accum['min'])
+overall_max = max(stats_accum['max'])
+overall_mean = stats_accum['sum'] / stats_accum['count']
+total_values = stats_accum['count'] + stats_accum['missing']
+pct_missing = stats_accum['missing'] / total_values * 100
 
-start = time.perf_counter()
-sorted(sample_for_timsort)
-end = time.perf_counter()
-timsort_measured = end - start
-
-c_timsort = timsort_measured / (largest_n * math.log2(largest_n))
-timsort_full_seconds = c_timsort * (TOTAL_ROWS * math.log2(TOTAL_ROWS))
-
-print(f'\nPython sorted() (Timsort) at n={largest_n}: {timsort_measured:.6f}s')
-print(f'Estimated Timsort time at full scale: {format_duration(timsort_full_seconds)}')
-
-print('\nSpeedup factor (O(n^2) algorithm time / Timsort time) at full scale:')
-for algo, est_seconds in full_scale_estimates.items():
-    speedup = est_seconds / timsort_full_seconds
-    print(f'{algo}: Timsort is ~{speedup:,.0f}x faster')
+print(f'Min: {overall_min}')
+print(f'Max: {overall_max}')
+print(f'Mean: {overall_mean:.2f}')
+print(f'% Missing: {pct_missing:.2f}%')

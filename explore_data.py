@@ -27,3 +27,27 @@ for filename in files:
             print(f'  ...chunk {i}, running total rows: {total_rows:,}')
 
 print(f'\nTOTAL ROWS across all 4 files: {total_rows:,}')
+# Basic stats for our chosen numeric column: ARR_DELAY
+print('\n--- ARR_DELAY statistics ---')
+stats_accum = {'min': [], 'max': [], 'sum': 0, 'count': 0, 'missing': 0}
+
+for filename in files:
+    path = os.path.join(folder, filename)
+    for chunk in pd.read_csv(path, chunksize=1_000_000, usecols=['ARR_DELAY']):
+        col = chunk['ARR_DELAY']
+        stats_accum['min'].append(col.min())
+        stats_accum['max'].append(col.max())
+        stats_accum['sum'] += col.sum()
+        stats_accum['count'] += col.notna().sum()
+        stats_accum['missing'] += col.isna().sum()
+
+overall_min = min(stats_accum['min'])
+overall_max = max(stats_accum['max'])
+overall_mean = stats_accum['sum'] / stats_accum['count']
+total_values = stats_accum['count'] + stats_accum['missing']
+pct_missing = stats_accum['missing'] / total_values * 100
+
+print(f'Min: {overall_min}')
+print(f'Max: {overall_max}')
+print(f'Mean: {overall_mean:.2f}')
+print(f'% Missing: {pct_missing:.2f}%')
