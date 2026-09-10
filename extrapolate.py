@@ -2,7 +2,7 @@ import pandas as pd
 import math
 
 RESULTS_CSV = 'sort_benchmark_results.csv'
-TOTAL_ROWS = None  # <-- fill this in with your Part A total row count (numeric column, non-missing count is fine too)
+TOTAL_ROWS = 28_374_211  # <-- fill this in with your Part A total row count (numeric column, non-missing count is fine too)
 
 df = pd.read_csv(RESULTS_CSV)
 
